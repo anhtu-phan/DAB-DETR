@@ -12,8 +12,6 @@
 # ------------------------------------------------------------------------
 
 
-
-
 import os
 
 import math
@@ -59,19 +57,19 @@ def sigmoid_focal_loss(inputs, targets, num_boxes, alpha: float = 0.25, gamma: f
         alpha_t = alpha * targets + (1 - alpha) * (1 - targets)
         loss = alpha_t * loss
 
-
     return loss.mean(1).sum() / num_boxes
 
 
 class DABDETR(nn.Module):
     """ This is the DAB-DETR module that performs object detection """
-    def __init__(self, backbone, transformer, num_classes, num_queries, 
-                    aux_loss=False, 
-                    iter_update=True,
-                    query_dim=4, 
-                    bbox_embed_diff_each_layer=False,
-                    random_refpoints_xy=False,
-                    ):
+
+    def __init__(self, backbone, transformer, num_classes, num_queries,
+                 aux_loss=False,
+                 iter_update=True,
+                 query_dim=4,
+                 bbox_embed_diff_each_layer=False,
+                 random_refpoints_xy=False,
+                 ):
         """ Initializes the model.
         Parameters:
             backbone: torch module of the backbone to be used. See backbone.py
@@ -84,7 +82,7 @@ class DABDETR(nn.Module):
             query_dim: query dimension. 2 for point and 4 for box.
             bbox_embed_diff_each_layer: dont share weights of prediction heads. Default for False. (shared weights.)
             random_refpoints_xy: random init the x,y of anchor boxes and freeze them. (It sometimes helps to improve the performance)
-            
+
 
         """
         super().__init__()
@@ -97,7 +95,6 @@ class DABDETR(nn.Module):
             self.bbox_embed = nn.ModuleList([MLP(hidden_dim, hidden_dim, 4, 3) for i in range(6)])
         else:
             self.bbox_embed = MLP(hidden_dim, hidden_dim, 4, 3)
-        
 
         # setting query dim
         self.query_dim = query_dim
@@ -107,13 +104,9 @@ class DABDETR(nn.Module):
         self.random_refpoints_xy = random_refpoints_xy
         if random_refpoints_xy:
             # import ipdb; ipdb.set_trace()
-            self.refpoint_embed.weight.data[:, :2].uniform_(0,1)
+            self.refpoint_embed.weight.data[:, :2].uniform_(0, 1)
             self.refpoint_embed.weight.data[:, :2] = inverse_sigmoid(self.refpoint_embed.weight.data[:, :2])
             self.refpoint_embed.weight.data[:, :2].requires_grad = False
-
-
-
-
 
         self.input_proj = nn.Conv2d(backbone.num_channels, hidden_dim, kernel_size=1)
         self.backbone = backbone
@@ -122,7 +115,6 @@ class DABDETR(nn.Module):
 
         if self.iter_update:
             self.transformer.decoder.bbox_embed = self.bbox_embed
-
 
         # init prior_prob setting for focal loss
         prior_prob = 0.01
@@ -138,8 +130,6 @@ class DABDETR(nn.Module):
         else:
             nn.init.constant_(self.bbox_embed.layers[-1].weight.data, 0)
             nn.init.constant_(self.bbox_embed.layers[-1].bias.data, 0)
-
-        
 
     def forward(self, samples: NestedTensor):
         """ The forward expects a NestedTensor, which consists of:
@@ -165,9 +155,7 @@ class DABDETR(nn.Module):
         # default pipeline
         embedweight = self.refpoint_embed.weight
         hs, reference = self.transformer(self.input_proj(src), mask, embedweight, pos[-1])
-        
-        
-        
+
         if not self.bbox_embed_diff_each_layer:
             reference_before_sigmoid = inverse_sigmoid(reference)
             tmp = self.bbox_embed(hs)
@@ -204,6 +192,7 @@ class SetCriterion(nn.Module):
         1) we compute hungarian assignment between ground truth boxes and the outputs of the model
         2) we supervise each pair of matched ground-truth / prediction (supervise class and box)
     """
+
     def __init__(self, num_classes, matcher, weight_dict, focal_alpha, losses):
         """ Create the criterion.
         Parameters:
@@ -219,7 +208,6 @@ class SetCriterion(nn.Module):
         self.weight_dict = weight_dict
         self.losses = losses
         self.focal_alpha = focal_alpha
-        
 
     def loss_labels(self, outputs, targets, indices, num_boxes, log=True):
         """Classification loss (Binary focal loss)
@@ -234,12 +222,13 @@ class SetCriterion(nn.Module):
                                     dtype=torch.int64, device=src_logits.device)
         target_classes[idx] = target_classes_o
 
-        target_classes_onehot = torch.zeros([src_logits.shape[0], src_logits.shape[1], src_logits.shape[2]+1],
+        target_classes_onehot = torch.zeros([src_logits.shape[0], src_logits.shape[1], src_logits.shape[2] + 1],
                                             dtype=src_logits.dtype, layout=src_logits.layout, device=src_logits.device)
         target_classes_onehot.scatter_(2, target_classes.unsqueeze(-1), 1)
 
-        target_classes_onehot = target_classes_onehot[:,:,:-1]
-        loss_ce = sigmoid_focal_loss(src_logits, target_classes_onehot, num_boxes, alpha=self.focal_alpha, gamma=2) * src_logits.shape[1]
+        target_classes_onehot = target_classes_onehot[:, :, :-1]
+        loss_ce = sigmoid_focal_loss(src_logits, target_classes_onehot, num_boxes, alpha=self.focal_alpha, gamma=2) * \
+                  src_logits.shape[1]
         losses = {'loss_ce': loss_ce}
 
         if log:
@@ -285,7 +274,6 @@ class SetCriterion(nn.Module):
         with torch.no_grad():
             losses['loss_xy'] = loss_bbox[..., :2].sum() / num_boxes
             losses['loss_hw'] = loss_bbox[..., 2:].sum() / num_boxes
-
 
         return losses
 
@@ -346,7 +334,7 @@ class SetCriterion(nn.Module):
              outputs: dict of tensors, see the output specification of the model for the format
              targets: list of dicts, such that len(targets) == batch_size.
                       The expected keys in each dict depends on the losses applied, see each loss' doc
-            
+
              return_indices: used for vis. if True, the layer0-5 indices will be returned as well.
 
         """
@@ -398,6 +386,7 @@ class SetCriterion(nn.Module):
 
 class PostProcess(nn.Module):
     """ This module converts the model's output into the format expected by the coco api"""
+
     def __init__(self, num_select=100) -> None:
         super().__init__()
         self.num_select = num_select
@@ -423,8 +412,8 @@ class PostProcess(nn.Module):
         topk_boxes = topk_indexes // out_logits.shape[2]
         labels = topk_indexes % out_logits.shape[2]
         boxes = box_ops.box_cxcywh_to_xyxy(out_bbox)
-        boxes = torch.gather(boxes, 1, topk_boxes.unsqueeze(-1).repeat(1,1,4))
-        
+        boxes = torch.gather(boxes, 1, topk_boxes.unsqueeze(-1).repeat(1, 1, 4))
+
         # and from relative [0, 1] to absolute [0, height] coordinates
         img_h, img_w = target_sizes.unbind(1)
         scale_fct = torch.stack([img_w, img_h, img_w, img_h], dim=1)
@@ -459,11 +448,12 @@ def build_DABDETR(args):
     # you should pass `num_classes` to be 2 (max_obj_id + 1).
     # For more details on this, check the following discussion
     # https://github.com/facebookresearch/detr/issues/108#issuecomment-650269223
-    num_classes = 20 if args.dataset_file != 'coco' else 91
-    if args.dataset_file == "coco_panoptic":
-        # for panoptic, we just add a num_classes that is large enough to hold
-        # max_obj_id + 1, but the exact value doesn't really matter
-        num_classes = 250
+    # num_classes = 20 if args.dataset_file != 'coco' else 91
+    # if args.dataset_file == "coco_panoptic":
+    #     # for panoptic, we just add a num_classes that is large enough to hold
+    #     # max_obj_id + 1, but the exact value doesn't really matter
+    #     num_classes = 250
+    num_classes = 4
     device = torch.device(args.device)
 
     backbone = build_backbone(args)

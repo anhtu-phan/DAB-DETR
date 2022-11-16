@@ -19,7 +19,7 @@ from datasets.panoptic_eval import PanopticEvaluator
 
 def train_one_epoch(model: torch.nn.Module, criterion: torch.nn.Module,
                     data_loader: Iterable, optimizer: torch.optim.Optimizer,
-                    device: torch.device, epoch: int, max_norm: float = 0, 
+                    device: torch.device, epoch: int, max_norm: float = 0,
                     wo_class_error=False, lr_scheduler=None, args=None, logger=None, ema_m=None):
     scaler = torch.cuda.amp.GradScaler(enabled=args.amp)
 
@@ -48,11 +48,10 @@ def train_one_epoch(model: torch.nn.Module, criterion: torch.nn.Module,
                 outputs = model(samples, targets)
             else:
                 outputs = model(samples)
-        
+
             loss_dict = criterion(outputs, targets)
             weight_dict = criterion.weight_dict
             losses = sum(loss_dict[k] * weight_dict[k] for k in loss_dict.keys() if k in weight_dict)
-
 
         # reduce losses over all GPUs for logging purposes
         loss_dict_reduced = utils.reduce_dict(loss_dict)
@@ -68,7 +67,6 @@ def train_one_epoch(model: torch.nn.Module, criterion: torch.nn.Module,
             print("Loss is {}, stopping training".format(loss_value))
             print(loss_dict_reduced)
             sys.exit(1)
-
 
         # amp backward function
         if args.amp:
@@ -86,7 +84,6 @@ def train_one_epoch(model: torch.nn.Module, criterion: torch.nn.Module,
                 torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm)
             optimizer.step()
 
-
         metric_logger.update(loss=loss_value, **loss_dict_reduced_scaled, **loss_dict_reduced_unscaled)
         if 'class_error' in loss_dict_reduced:
             metric_logger.update(class_error=loss_dict_reduced['class_error'])
@@ -95,21 +92,21 @@ def train_one_epoch(model: torch.nn.Module, criterion: torch.nn.Module,
         _cnt += 1
         if args.debug:
             if _cnt % 15 == 0:
-                print("BREAK!"*5)
+                print("BREAK!" * 5)
                 break
-
 
     # gather the stats from all processes
     metric_logger.synchronize_between_processes()
     print("Averaged stats:", metric_logger)
     resstat = {k: meter.global_avg for k, meter in metric_logger.meters.items() if meter.count > 0}
     if getattr(criterion, 'loss_weight_decay', False):
-        resstat.update({f'weight_{k}': v for k,v in criterion.weight_dict.items()})
+        resstat.update({f'weight_{k}': v for k, v in criterion.weight_dict.items()})
     return resstat
 
 
 @torch.no_grad()
-def evaluate(model, criterion, postprocessors, data_loader, base_ds, device, output_dir, wo_class_error=False, args=None, logger=None):
+def evaluate(model, criterion, postprocessors, data_loader, base_ds, device, output_dir, wo_class_error=False,
+             args=None, logger=None):
     try:
         need_tgt_for_training = args.use_dn
     except:
@@ -135,7 +132,7 @@ def evaluate(model, criterion, postprocessors, data_loader, base_ds, device, out
         )
 
     _cnt = 0
-    output_state_dict = {} # for debug only
+    output_state_dict = {}  # for debug only
     for samples, targets in metric_logger.log_every(data_loader, 10, header, logger=logger):
         samples = samples.to(device)
         # import ipdb; ipdb.set_trace()
@@ -184,7 +181,7 @@ def evaluate(model, criterion, postprocessors, data_loader, base_ds, device, out
                 res_pano[i]["file_name"] = file_name
 
             panoptic_evaluator.update(res_pano)
-        
+
         if args.save_results:
             """
             saving results of eval.
@@ -210,7 +207,7 @@ def evaluate(model, criterion, postprocessors, data_loader, base_ds, device, out
                 gt_bbox = tgt['boxes']
                 gt_label = tgt['labels']
                 gt_info = torch.cat((gt_bbox, gt_label.unsqueeze(-1)), 1)
-                
+
                 # img_h, img_w = tgt['orig_size'].unbind()
                 # scale_fct = torch.stack([img_w, img_h, img_w, img_h], dim=0)
                 # _res_bbox = res['boxes'] / scale_fct
@@ -231,7 +228,7 @@ def evaluate(model, criterion, postprocessors, data_loader, base_ds, device, out
         _cnt += 1
         if args.debug:
             if _cnt % 15 == 0:
-                print("BREAK!"*5)
+                print("BREAK!" * 5)
                 break
 
     if args.save_results:
@@ -252,14 +249,26 @@ def evaluate(model, criterion, postprocessors, data_loader, base_ds, device, out
     if coco_evaluator is not None:
         coco_evaluator.accumulate()
         coco_evaluator.summarize()
-        
+
     panoptic_res = None
     if panoptic_evaluator is not None:
         panoptic_res = panoptic_evaluator.summarize()
     stats = {k: meter.global_avg for k, meter in metric_logger.meters.items() if meter.count > 0}
     if coco_evaluator is not None:
         if 'bbox' in postprocessors.keys():
-            stats['coco_eval_bbox'] = coco_evaluator.coco_eval['bbox'].stats.tolist()
+            coco_eval_bbox = coco_evaluator.coco_eval['bbox'].stats.tolist()
+            stats['AP_50_95_all_100'] = coco_eval_bbox[0]
+            stats['AP_50_all_100'] = coco_eval_bbox[1]
+            stats['AP_75_all_100'] = coco_eval_bbox[2]
+            stats['AP_50_95_small_100'] = coco_eval_bbox[3]
+            stats['AP_50_95_medium_100'] = coco_eval_bbox[4]
+            stats['AP_50_95_large_100'] = coco_eval_bbox[5]
+            stats['AR_50_95_all_1'] = coco_eval_bbox[6]
+            stats['AR_50_95_all_10'] = coco_eval_bbox[7]
+            stats['AR_50_95_all_100'] = coco_eval_bbox[8]
+            stats['AR_50_95_small_100'] = coco_eval_bbox[9]
+            stats['AR_50_95_medium_100'] = coco_eval_bbox[10]
+            stats['AR_50_95_large_100'] = coco_eval_bbox[11]
         if 'segm' in postprocessors.keys():
             stats['coco_eval_masks'] = coco_evaluator.coco_eval['segm'].stats.tolist()
     if panoptic_res is not None:

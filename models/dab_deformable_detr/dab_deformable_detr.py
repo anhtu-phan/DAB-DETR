@@ -37,9 +37,10 @@ def _get_clones(module, N):
 
 class DABDeformableDETR(nn.Module):
     """ This is the DAB-Deformable-DETR for object detection """
+
     def __init__(self, backbone, transformer, num_classes, num_queries, num_feature_levels,
                  aux_loss=True, with_box_refine=True, two_stage=False,
-                 use_dab=True, 
+                 use_dab=True,
                  num_patterns=0,
                  random_refpoints_xy=False,
                  ):
@@ -69,16 +70,15 @@ class DABDeformableDETR(nn.Module):
         self.random_refpoints_xy = random_refpoints_xy
         if not two_stage:
             if not use_dab:
-                self.query_embed = nn.Embedding(num_queries, hidden_dim*2)
+                self.query_embed = nn.Embedding(num_queries, hidden_dim * 2)
             else:
                 self.tgt_embed = nn.Embedding(num_queries, hidden_dim)
                 self.refpoint_embed = nn.Embedding(num_queries, 4)
                 if random_refpoints_xy:
                     # import ipdb; ipdb.set_trace()
-                    self.refpoint_embed.weight.data[:, :2].uniform_(0,1)
+                    self.refpoint_embed.weight.data[:, :2].uniform_(0, 1)
                     self.refpoint_embed.weight.data[:, :2] = inverse_sigmoid(self.refpoint_embed.weight.data[:, :2])
                     self.refpoint_embed.weight.data[:, :2].requires_grad = False
-                
 
         if self.num_patterns > 0:
             self.patterns_embed = nn.Embedding(self.num_patterns, hidden_dim)
@@ -184,22 +184,23 @@ class DABDeformableDETR(nn.Module):
             query_embeds = None
         elif self.use_dab:
             if self.num_patterns == 0:
-                tgt_embed = self.tgt_embed.weight           # nq, 256
-                refanchor = self.refpoint_embed.weight      # nq, 4
+                tgt_embed = self.tgt_embed.weight  # nq, 256
+                refanchor = self.refpoint_embed.weight  # nq, 4
                 query_embeds = torch.cat((tgt_embed, refanchor), dim=1)
             else:
                 # multi patterns
-                tgt_embed = self.tgt_embed.weight           # nq, 256
-                pat_embed = self.patterns_embed.weight      # num_pat, 256
-                tgt_embed = tgt_embed.repeat(self.num_patterns, 1) # nq*num_pat, 256
-                pat_embed = pat_embed[:, None, :].repeat(1, self.num_queries, 1).flatten(0, 1) # nq*num_pat, 256
+                tgt_embed = self.tgt_embed.weight  # nq, 256
+                pat_embed = self.patterns_embed.weight  # num_pat, 256
+                tgt_embed = tgt_embed.repeat(self.num_patterns, 1)  # nq*num_pat, 256
+                pat_embed = pat_embed[:, None, :].repeat(1, self.num_queries, 1).flatten(0, 1)  # nq*num_pat, 256
                 tgt_all_embed = tgt_embed + pat_embed
-                refanchor = self.refpoint_embed.weight.repeat(self.num_patterns, 1)      # nq*num_pat, 4
+                refanchor = self.refpoint_embed.weight.repeat(self.num_patterns, 1)  # nq*num_pat, 4
                 query_embeds = torch.cat((tgt_all_embed, refanchor), dim=1)
         else:
             query_embeds = self.query_embed.weight
-        hs, init_reference, inter_references, enc_outputs_class, enc_outputs_coord_unact = self.transformer(srcs, masks, pos, query_embeds)
-
+        hs, init_reference, inter_references, enc_outputs_class, enc_outputs_coord_unact = self.transformer(srcs, masks,
+                                                                                                            pos,
+                                                                                                            query_embeds)
 
         outputs_classes = []
         outputs_coords = []
@@ -230,7 +231,8 @@ class DABDeformableDETR(nn.Module):
             enc_outputs_coord = enc_outputs_coord_unact.sigmoid()
             out['enc_outputs'] = {'pred_logits': enc_outputs_class, 'pred_boxes': enc_outputs_coord}
             if os.environ.get('IPDB_SHILONG_DEBUG') == 'INFO':
-                import ipdb; ipdb.set_trace()
+                import ipdb;
+                ipdb.set_trace()
         return out
 
     @torch.jit.unused
@@ -248,6 +250,7 @@ class SetCriterion(nn.Module):
         1) we compute hungarian assignment between ground truth boxes and the outputs of the model
         2) we supervise each pair of matched ground-truth / prediction (supervise class and box)
     """
+
     def __init__(self, num_classes, matcher, weight_dict, losses, focal_alpha=0.25):
         """ Create the criterion.
         Parameters:
@@ -281,8 +284,9 @@ class SetCriterion(nn.Module):
                                             dtype=src_logits.dtype, layout=src_logits.layout, device=src_logits.device)
         target_classes_onehot.scatter_(2, target_classes.unsqueeze(-1), 1)
 
-        target_classes_onehot = target_classes_onehot[:,:,:-1]
-        loss_ce = sigmoid_focal_loss(src_logits, target_classes_onehot, num_boxes, alpha=self.focal_alpha, gamma=2) * src_logits.shape[1]
+        target_classes_onehot = target_classes_onehot[:, :, :-1]
+        loss_ce = sigmoid_focal_loss(src_logits, target_classes_onehot, num_boxes, alpha=self.focal_alpha, gamma=2) * \
+                  src_logits.shape[1]
         losses = {'loss_ce': loss_ce}
 
         if log:
@@ -423,7 +427,8 @@ class SetCriterion(nn.Module):
             for bt in bin_targets:
                 bt['labels'] = torch.zeros_like(bt['labels'])
             if os.environ.get('IPDB_SHILONG_DEBUG') == 'INFO':
-                import ipdb; ipdb.set_trace()
+                import ipdb;
+                ipdb.set_trace()
             indices = self.matcher(enc_outputs, bin_targets)
             for loss in self.losses:
                 if loss == 'masks':
@@ -463,7 +468,7 @@ class PostProcess(nn.Module):
         topk_boxes = topk_indexes // out_logits.shape[2]
         labels = topk_indexes % out_logits.shape[2]
         boxes = box_ops.box_cxcywh_to_xyxy(out_bbox)
-        boxes = torch.gather(boxes, 1, topk_boxes.unsqueeze(-1).repeat(1,1,4))
+        boxes = torch.gather(boxes, 1, topk_boxes.unsqueeze(-1).repeat(1, 1, 4))
 
         # and from relative [0, 1] to absolute [0, height] coordinates
         img_h, img_w = target_sizes.unbind(1)
@@ -491,9 +496,10 @@ class MLP(nn.Module):
 
 
 def build_dab_deformable_detr(args):
-    num_classes = 20 if args.dataset_file != 'coco' else 91
-    if args.dataset_file == "coco_panoptic":
-        num_classes = 250
+    # num_classes = 20 if args.dataset_file != 'coco' else 91
+    # if args.dataset_file == "coco_panoptic":
+    #     num_classes = 250
+    num_classes = 4
     device = torch.device(args.device)
 
     backbone = build_backbone(args)
