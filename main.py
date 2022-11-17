@@ -187,7 +187,7 @@ def build_model_main(args):
 def main(args):
     utils.init_distributed_mode(args)
     # torch.autograd.set_detect_anomaly(True)
-    wandb.init(name=args.wandb_name, project="detr-object-detection")
+    wandb.init(name=args.wandb_name, project="detr-fruit-detection")
 
     # setup logger
     os.makedirs(args.output_dir, exist_ok=True)
